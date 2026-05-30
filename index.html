@@ -835,9 +835,9 @@ function startBossa(){ if(bossaStarted)return;bossaStarted=true;const c=ac();ens
   musicGain.gain.setTargetAtTime(0.16,c.currentTime,2.5);nextNoteTime=c.currentTime+0.15;bstep=0;
   const eighth=(60/116)/2;
   bossaTimer=setInterval(()=>{const c2=ac();while(nextNoteTime<c2.currentTime+0.12){scheduleStep(bstep,nextNoteTime);bstep++;nextNoteTime+=eighth;}},25);}
-let songEl=null,songStarted=false,songFailed=false;
-  function fadeSong(){ if(!songEl)return; const dur=2000,t0=performance.now(),target=0.6;
-    function step(t){ if(!songEl)return; const k=Math.min(1,(t-t0)/dur); songEl.volume=muted?0:target*k;
+let songEl=null,songStarted=false,songFailed=false,songSrc=null,songGain=null;
+  function fadeVol(){ if(!songEl)return; const dur=2000,t0=performance.now(),target=0.6;
+    function step(t){ if(!songEl||songGain)return; const k=Math.min(1,(t-t0)/dur); songEl.volume=muted?0:target*k;
       if(k<1)requestAnimationFrame(step);} requestAnimationFrame(step); }
   function startSong(){
     if(songStarted)return; songStarted=true;
@@ -847,11 +847,21 @@ let songEl=null,songStarted=false,songFailed=false;
     function fallback(){ if(fellBack||songFailed)return; fellBack=true; songFailed=true;
       try{songEl.pause();}catch(e){} startBossa(); }
     songEl.addEventListener('error',fallback);
-    songEl.volume=0; songEl.muted=muted;
+    const c=ac();
+    /* Route the MP3 through the Web Audio graph (same path as the SFX): this
+       ignores the iOS silent switch, enables a real fade-in (iOS ignores
+       element.volume), and the mute button (which zeroes `master`) covers it. */
+    try{
+      if(!songSrc){ songSrc=c.createMediaElementSource(songEl); songGain=c.createGain();
+        songGain.gain.value=0.0001; songSrc.connect(songGain); songGain.connect(master); }
+    }catch(e){ songGain=null; }
+    songEl.muted=false; songEl.volume=1;
+    if(songGain){ const t=c.currentTime; songGain.gain.cancelScheduledValues(t);
+      songGain.gain.setValueAtTime(0.0001,t); songGain.gain.exponentialRampToValueAtTime(0.6,t+2); }
     const p=songEl.play();
-    if(p&&p.then){ p.then(()=>{ if(!songFailed)fadeSong(); }).catch(fallback); }
-    else { fadeSong(); }
-    setTimeout(()=>{ if(!songFailed && (songEl.error || (songEl.readyState===0 && songEl.paused))) fallback(); },1600);
+    if(p&&p.then){ p.then(()=>{ if(!songFailed&&!songGain)fadeVol(); }).catch(fallback); }
+    else if(!songGain){ fadeVol(); }
+    setTimeout(()=>{ if(!songFailed && (songEl.error || (songEl.readyState<2 && songEl.paused))) fallback(); },2000);
   }
   const PENT=[0,2,4,7,9,12,14,16];
 function marimba(off,vol){const c=ac();const f=m2f(72+(off||0));const o=c.createOscillator(),o2=c.createOscillator(),gn=c.createGain(),g2=c.createGain();
@@ -870,7 +880,7 @@ function waterDrop(){ if(muted)return; const c=ac();const o=c.createOscillator()
   o.connect(gn);gn.connect(master);o.start();o.stop(c.currentTime+0.2);}
 document.addEventListener('pointerdown',()=>{ if(AC&&AC.state==='suspended')AC.resume(); },{passive:true});
 const muteBtn=document.getElementById('mute');
-muteBtn.onclick=(e)=>{e.stopPropagation();muted=!muted;if(master)master.gain.value=muted?0:.9;if(songEl)songEl.muted=muted;muteBtn.textContent=muted?'🔇':'🔊';};
+muteBtn.onclick=(e)=>{e.stopPropagation();muted=!muted;if(master)master.gain.value=muted?0:.9;if(songEl&&!songGain)songEl.muted=muted;muteBtn.textContent=muted?'🔇':'🔊';};
 
 /* ============ PAGER (3D flip) ============ */
 const mag=document.getElementById('mag');
